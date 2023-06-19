@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.9;
 
+/**
+ * @title FacultyElection
+ * @dev A smart contract for conducting a faculty election.
+ */
 contract FacultyElection {
     struct Candidate {
         string name;
@@ -22,6 +26,10 @@ contract FacultyElection {
     bool private isElectionOpen;
     uint private electionEndTime;
     
+    mapping(address => uint) private voteTimestamps;  // Stores the timestamp of when a voter casts a vote
+    
+    event VoteCasted(uint candidateId, uint voteCount);  // Event to indicate that a vote has been casted
+    
     modifier onlyAdmin() {
         require(msg.sender == admin, "Only admin can perform this operation");
         _;
@@ -37,11 +45,22 @@ contract FacultyElection {
         _;
     }
     
+    /**
+     * @dev Constructor function.
+     * @param _electionDuration The duration of the election in seconds.
+     */
     constructor(uint _electionDuration) {
         admin = msg.sender;
         electionEndTime = block.timestamp + _electionDuration;
     }
     
+    /**
+     * @dev Registers a candidate for the election.
+     * @param _name The name of the candidate.
+     * @param _matriculationNumber The matriculation number of the candidate.
+     * @param _department The department of the candidate.
+     * @param _position The position of the candidate.
+     */
     function registerCandidate(
         string memory _name,
         string memory _matriculationNumber,
@@ -57,6 +76,15 @@ contract FacultyElection {
         candidates[candidateCount] = Candidate(_name, _matriculationNumber, _department, _position, 0);
     }
     
+    /**
+     * @dev Retrieves the details of a candidate.
+     * @param _candidateId The ID of the candidate.
+     * @return name The name of the candidate.
+     * @return matriculationNumber The matriculation number of the candidate.
+     * @return department The department of the candidate.
+     * @return position The position of the candidate.
+     * @return voteCount The number of votes received by the candidate.
+     */
     function getCandidate(uint _candidateId) public view returns (
         string memory name,
         string memory matriculationNumber,
@@ -76,6 +104,11 @@ contract FacultyElection {
         );
     }
     
+    /**
+     * @dev Allows a voter to login using their department and matriculation number.
+     * @param _department The department of the voter.
+     * @param _matriculationNumber The matriculation number of the voter.
+     */
     function loginVoter(string memory _department, string memory _matriculationNumber) public {
         require(bytes(_department).length > 0, "Invalid department name");
         require(isValidMatriculationNumber(_department, _matriculationNumber), "Invalid matriculation number");
@@ -83,6 +116,10 @@ contract FacultyElection {
         voters[msg.sender] = Voter(false, _department);
     }
     
+    /**
+     * @dev Allows a voter to cast their vote for a candidate.
+     * @param _candidateId The ID of the candidate.
+     */
     function vote(uint _candidateId) public onlyVoter onlyDuringElection {
         require(_candidateId > 0 && _candidateId <= candidateCount, "Invalid candidate ID");
         
@@ -90,24 +127,44 @@ contract FacultyElection {
         candidate.voteCount++;
         
         voters[msg.sender].hasVoted = true;
+        
+        // Record the timestamp of the vote
+        voteTimestamps[msg.sender] = block.timestamp;
+        
+        emit VoteCasted(_candidateId, candidate.voteCount);
     }
     
+    /**
+     * @dev Retrieves the status of the election.
+     * @return isOpen True if the election is open, false otherwise.
+     * @return endTime The end time of the election.
+     */
     function getElectionStatus() public view returns (bool isOpen, uint endTime) {
         return (isElectionOpen, electionEndTime);
     }
     
+    /**
+     * @dev Opens the election for voting.
+     */
     function openElection() public onlyAdmin {
         require(!isElectionOpen, "Election is already open");
         
         isElectionOpen = true;
     }
     
+    /**
+     * @dev Closes the election for voting.
+     */
     function closeElection() public onlyAdmin {
         require(isElectionOpen, "Election is not open");
         
         isElectionOpen = false;
     }
     
+    /**
+     * @dev Updates the end time of the election.
+     * @param _newEndTime The new end time of the election.
+     */
     function updateElectionEndTime(uint _newEndTime) public onlyAdmin {
         require(_newEndTime > block.timestamp, "Invalid end time");
         require(_newEndTime > electionEndTime, "New end time must be later than current end time");
@@ -115,6 +172,11 @@ contract FacultyElection {
         electionEndTime = _newEndTime;
     }
     
+    /**
+     * @dev Sets the vote count for multiple candidates at once.
+     * @param _candidateIds The IDs of the candidates.
+     * @param _voteCounts The corresponding vote counts for the candidates.
+     */
     function setVoteCountForCandidates(uint[] memory _candidateIds, uint[] memory _voteCounts) public onlyAdmin {
         require(_candidateIds.length == _voteCounts.length, "Invalid input lengths");
         
@@ -126,6 +188,12 @@ contract FacultyElection {
         }
     }
     
+    /**
+     * @dev Checks if a matriculation number is valid.
+     * @param _department The department associated with the matriculation number.
+     * @param _matriculationNumber The matriculation number to validate.
+     * @return True if the matriculation number is valid, false otherwise.
+     */
     function isValidMatriculationNumber(string memory _department, string memory _matriculationNumber) private pure returns (bool) {
         bytes memory departmentBytes = bytes(_department);
         bytes memory matriculationBytes = bytes(_matriculationNumber);
