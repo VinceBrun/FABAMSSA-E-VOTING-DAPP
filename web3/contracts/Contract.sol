@@ -13,38 +13,38 @@ contract FacultyElection {
         string position;
         uint voteCount;
     }
-    
+
     struct Voter {
         bool hasVoted;
         string department;
     }
-    
+
     address private admin;
     mapping(address => Voter) private voters;
     mapping(uint => Candidate) private candidates;
     uint private candidateCount;
     bool private isElectionOpen;
     uint private electionEndTime;
-    
-    mapping(address => uint) private voteTimestamps;  // Stores the timestamp of when a voter casts a vote
-    
-    event VoteCasted(uint candidateId, uint voteCount);  // Event to indicate that a vote has been casted
-    
+
+    mapping(address => uint) private voteTimestamps; // Stores the timestamp of when a voter casts a vote
+
+    event VoteCasted(uint candidateId, uint voteCount); // Event to indicate that a vote has been casted
+
     modifier onlyAdmin() {
         require(msg.sender == admin, "Only admin can perform this operation");
         _;
     }
-    
+
     modifier onlyVoter() {
         require(!voters[msg.sender].hasVoted, "You have already voted");
         _;
     }
-    
+
     modifier onlyDuringElection() {
         require(isElectionOpen && block.timestamp <= electionEndTime, "Voting is closed");
         _;
     }
-    
+
     /**
      * @dev Constructor function.
      * @param _electionDuration The duration of the election in seconds.
@@ -53,7 +53,7 @@ contract FacultyElection {
         admin = msg.sender;
         electionEndTime = block.timestamp + _electionDuration;
     }
-    
+
     /**
      * @dev Registers a candidate for the election.
      * @param _name The name of the candidate.
@@ -71,11 +71,11 @@ contract FacultyElection {
         require(bytes(_matriculationNumber).length > 0, "Invalid matriculation number");
         require(bytes(_department).length > 0, "Invalid department name");
         require(bytes(_position).length > 0, "Invalid position name");
-        
+
         candidateCount++;
         candidates[candidateCount] = Candidate(_name, _matriculationNumber, _department, _position, 0);
     }
-    
+
     /**
      * @dev Retrieves the details of a candidate.
      * @param _candidateId The ID of the candidate.
@@ -93,7 +93,7 @@ contract FacultyElection {
         uint voteCount
     ) {
         require(_candidateId > 0 && _candidateId <= candidateCount, "Invalid candidate ID");
-        
+
         Candidate memory candidate = candidates[_candidateId];
         return (
             candidate.name,
@@ -103,7 +103,7 @@ contract FacultyElection {
             candidate.voteCount
         );
     }
-    
+
     /**
      * @dev Allows a voter to login using their department and matriculation number.
      * @param _department The department of the voter.
@@ -112,28 +112,28 @@ contract FacultyElection {
     function loginVoter(string memory _department, string memory _matriculationNumber) public {
         require(bytes(_department).length > 0, "Invalid department name");
         require(isValidMatriculationNumber(_department, _matriculationNumber), "Invalid matriculation number");
-        
+
         voters[msg.sender] = Voter(false, _department);
     }
-    
+
     /**
      * @dev Allows a voter to cast their vote for a candidate.
      * @param _candidateId The ID of the candidate.
      */
     function vote(uint _candidateId) public onlyVoter onlyDuringElection {
         require(_candidateId > 0 && _candidateId <= candidateCount, "Invalid candidate ID");
-        
+
         Candidate storage candidate = candidates[_candidateId];
         candidate.voteCount++;
-        
+
         voters[msg.sender].hasVoted = true;
-        
+
         // Record the timestamp of the vote
         voteTimestamps[msg.sender] = block.timestamp;
-        
+
         emit VoteCasted(_candidateId, candidate.voteCount);
     }
-    
+
     /**
      * @dev Retrieves the status of the election.
      * @return isOpen True if the election is open, false otherwise.
@@ -142,25 +142,25 @@ contract FacultyElection {
     function getElectionStatus() public view returns (bool isOpen, uint endTime) {
         return (isElectionOpen, electionEndTime);
     }
-    
+
     /**
      * @dev Opens the election for voting.
      */
     function openElection() public onlyAdmin {
         require(!isElectionOpen, "Election is already open");
-        
+
         isElectionOpen = true;
     }
-    
+
     /**
      * @dev Closes the election for voting.
      */
     function closeElection() public onlyAdmin {
         require(isElectionOpen, "Election is not open");
-        
+
         isElectionOpen = false;
     }
-    
+
     /**
      * @dev Updates the end time of the election.
      * @param _newEndTime The new end time of the election.
@@ -168,10 +168,10 @@ contract FacultyElection {
     function updateElectionEndTime(uint _newEndTime) public onlyAdmin {
         require(_newEndTime > block.timestamp, "Invalid end time");
         require(_newEndTime > electionEndTime, "New end time must be later than current end time");
-        
+
         electionEndTime = _newEndTime;
     }
-    
+
     /**
      * @dev Sets the vote count for multiple candidates at once.
      * @param _candidateIds The IDs of the candidates.
@@ -179,15 +179,15 @@ contract FacultyElection {
      */
     function setVoteCountForCandidates(uint[] memory _candidateIds, uint[] memory _voteCounts) public onlyAdmin {
         require(_candidateIds.length == _voteCounts.length, "Invalid input lengths");
-        
+
         for (uint i = 0; i < _candidateIds.length; i++) {
             uint candidateId = _candidateIds[i];
             require(candidateId > 0 && candidateId <= candidateCount, "Invalid candidate ID");
-            
+
             candidates[candidateId].voteCount = _voteCounts[i];
         }
     }
-    
+
     /**
      * @dev Checks if a matriculation number is valid.
      * @param _department The department associated with the matriculation number.
@@ -198,17 +198,17 @@ contract FacultyElection {
         bytes memory departmentBytes = bytes(_department);
         bytes memory matriculationBytes = bytes(_matriculationNumber);
 
-        if (departmentBytes.length < 2 || matriculationBytes.length != 8) {
+        if (departmentBytes.length < 2 || matriculationBytes.length != 10) {
             return false;
         }
 
         bytes2 departmentPrefix = bytes2(uint16(uint8(departmentBytes[0])) << 8 | uint16(uint8(departmentBytes[1])));
-        bytes2 allowedDepartmentPrefix1 = bytes2(0x5F2F); // Department A
-        bytes2 allowedDepartmentPrefix2 = bytes2(0x5442); // Department B
-        bytes2 allowedDepartmentPrefix3 = bytes2(0x5853); // Department C
-        bytes2 allowedDepartmentPrefix4 = bytes2(0x5844); // Department D
-        bytes2 allowedDepartmentPrefix5 = bytes2(0x5345); // Department E
-        bytes2 allowedDepartmentPrefix6 = bytes2(0x4142); // Department F
+        bytes2 allowedDepartmentPrefix1 = bytes2(0x414E); // "AN" - Anatomy
+        bytes2 allowedDepartmentPrefix2 = bytes2(0x4243); // "BC" - Biochemistry
+        bytes2 allowedDepartmentPrefix3 = bytes2(0x5059); // "PY" - Physiology
+        bytes2 allowedDepartmentPrefix4 = bytes2(0x4855); // "HU" - Human nutrition and dietetics
+        bytes2 allowedDepartmentPrefix5 = bytes2(0x5048); // "PH" - Pharmacology
+        bytes2 allowedDepartmentPrefix6 = bytes2(0x5343); // "SC" - Science
 
         if (
             departmentPrefix != allowedDepartmentPrefix1 &&
@@ -221,26 +221,24 @@ contract FacultyElection {
             return false;
         }
 
-        bytes2 academicYearBytes = bytes2(uint16(uint8(departmentBytes[3])) << 8 | uint16(uint8(departmentBytes[4])));
-        bytes2 allowedAcademicYearPrefix = bytes2(0x3039); // Academic years 0-9
+        uint academicYear = uint(uint8(departmentBytes[2])) * 10 + uint(uint8(departmentBytes[3]));
+        uint groupCode = uint(uint8(departmentBytes[4]));
 
-        if (academicYearBytes < allowedAcademicYearPrefix) {
+        if (academicYear < 18 || academicYear > 23) {
             return false;
         }
 
-        if (
-            departmentPrefix == allowedDepartmentPrefix6 &&
-            !(academicYearBytes == bytes2(0x4141)) // Department F only allows academic year A
-        ) {
+        if (groupCode < 41 || (groupCode > 45 && groupCode != 65 && groupCode != 66 && groupCode != 67)) {
             return false;
         }
 
-        if (
-            !(matriculationBytes[0] >= 0x30 && matriculationBytes[0] <= 0x39) ||
-            !(matriculationBytes[1] >= 0x30 && matriculationBytes[1] <= 0x39) ||
-            !(matriculationBytes[2] >= 0x30 && matriculationBytes[2] <= 0x33) ||
-            !(matriculationBytes[3] >= 0x30 && matriculationBytes[3] <= 0x39)
-        ) {
+        uint remainingNumbers = uint(uint8(matriculationBytes[5])) * 10000 +
+            uint(uint8(matriculationBytes[6])) * 1000 +
+            uint(uint8(matriculationBytes[7])) * 100 +
+            uint(uint8(matriculationBytes[8])) * 10 +
+            uint(uint8(matriculationBytes[9]));
+
+        if (remainingNumbers < 44001 || remainingNumbers > 44300) {
             return false;
         }
 
