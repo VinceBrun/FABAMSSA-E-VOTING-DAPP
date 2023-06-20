@@ -202,7 +202,7 @@ contract FacultyElection {
         uint maxVotes = 0;
         uint winnerCount = 0;
 
-        // Find the maximum number of votes
+        // Find the maximum number of votes after election
         for (uint i = 1; i <= candidateCount; i++) {
             if (candidates[i].voteCount > maxVotes) {
                 maxVotes = candidates[i].voteCount;
