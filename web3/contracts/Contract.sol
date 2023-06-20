@@ -17,6 +17,7 @@ contract FacultyElection {
     struct Voter {
         bool hasVoted;
         string department;
+        string matriculationNumber;
     }
 
     address private admin;
@@ -105,141 +106,183 @@ contract FacultyElection {
     }
 
     /**
-     * @dev Allows a voter to login using their department and matriculation number.
-     * @param _department The department of the voter.
-     * @param _matriculationNumber The matriculation number of the voter.
+     * @dev Retrieves the total number of candidates registered.
+     * @return candidateCount The total number of candidates.
      */
-    function loginVoter(string memory _department, string memory _matriculationNumber) public {
-        require(bytes(_department).length > 0, "Invalid department name");
-        require(isValidMatriculationNumber(_department, _matriculationNumber), "Invalid matriculation number");
-
-        voters[msg.sender] = Voter(false, _department);
+    function getCandidateCount() public view returns (uint) {
+        return candidateCount;
     }
 
     /**
-     * @dev Allows a voter to cast their vote for a candidate.
-     * @param _candidateId The ID of the candidate.
+     * @dev Starts the election.
      */
-    function vote(uint _candidateId) public onlyVoter onlyDuringElection {
-        require(_candidateId > 0 && _candidateId <= candidateCount, "Invalid candidate ID");
-
-        Candidate storage candidate = candidates[_candidateId];
-        candidate.voteCount++;
-
-        voters[msg.sender].hasVoted = true;
-
-        // Record the timestamp of the vote
-        voteTimestamps[msg.sender] = block.timestamp;
-
-        emit VoteCasted(_candidateId, candidate.voteCount);
-    }
-
-    /**
-     * @dev Retrieves the status of the election.
-     * @return isOpen True if the election is open, false otherwise.
-     * @return endTime The end time of the election.
-     */
-    function getElectionStatus() public view returns (bool isOpen, uint endTime) {
-        return (isElectionOpen, electionEndTime);
-    }
-
-    /**
-     * @dev Opens the election for voting.
-     */
-    function openElection() public onlyAdmin {
+    function startElection() public onlyAdmin {
+        require(candidateCount > 0, "No candidates registered");
         require(!isElectionOpen, "Election is already open");
 
         isElectionOpen = true;
     }
 
     /**
-     * @dev Closes the election for voting.
+     * @dev Casts a vote for a candidate.
+     * @param _candidateId The ID of the candidate being voted for.
+     * @param _department The department of the voter.
+     * @param _matriculationNumber The matriculation number of the voter.
      */
-    function closeElection() public onlyAdmin {
+    function castVote(uint _candidateId, string memory _department, string memory _matriculationNumber) public onlyVoter onlyDuringElection {
+        require(_candidateId > 0 && _candidateId <= candidateCount, "Invalid candidate ID");
+        require(isValidVoterDepartment(_department, _matriculationNumber), "Invalid voter department or matriculation number");
+
+        voters[msg.sender].hasVoted = true;
+        voters[msg.sender].department = _department;
+        voters[msg.sender].matriculationNumber = _matriculationNumber;
+        
+        candidates[_candidateId].voteCount++;
+        emit VoteCasted(_candidateId, candidates[_candidateId].voteCount);
+
+        voteTimestamps[msg.sender] = block.timestamp;
+    }
+
+    /**
+     * @dev Checks if the voter department is valid based on the matriculation number.
+     * @param _department The department of the voter.
+     * @param _matriculationNumber The matriculation number of the voter.
+     * @return isValid True if the voter department is valid, false otherwise.
+     */
+    function isValidVoterDepartment(string memory _department, string memory _matriculationNumber) private pure returns (bool isValid) {
+        if (compareStrings(_department, "Anatomy")) {
+            // Valid matriculation number ranges for Anatomy department
+            string[6] memory csRanges = ["18/04144", "19/04144", "20/04144", "21/04144", "22/04144", "23/ABC44"];
+            return isValidMatriculationNumber(_matriculationNumber, csRanges);
+        } else if (compareStrings(_department, "Biochemistry")) {
+            // Valid matriculation number ranges for Biochemistry department
+            string[6] memory eeRanges = ["18/04244", "19/04244", "20/04244", "21/04244", "22/04244", "23/ABD44"];
+            return isValidMatriculationNumber(_matriculationNumber, eeRanges);
+        } else if (compareStrings(_department, "Physiology")) {
+            // Valid matriculation number ranges for Physiology department
+            string[6] memory meRanges = ["18/04344", "19/04344", "20/04344", "21/04344", "22/04344", "23/ABE44"];
+            return isValidMatriculationNumber(_matriculationNumber, meRanges);
+        } else if (compareStrings(_department, "Human Nutrition and Dietetics")) {
+            // Valid matriculation number ranges for Human Nutrition and Dietetics department
+            string[6] memory ceRanges = ["18/04444", "19/04444", "20/04444", "21/04444", "22/04444", "23/ABF44"];
+            return isValidMatriculationNumber(_matriculationNumber, ceRanges);
+        } else if (compareStrings(_department, "Pharmacology")) {
+            // Valid matriculation number ranges for Pharmacology department
+            string[6] memory cheRanges = ["18/04544", "19/04544", "20/04544", "21/04544", "22/04544", "23/ABG44"];
+            return isValidMatriculationNumber(_matriculationNumber, cheRanges);
+        } else {
+            return false;
+        }
+    }
+
+    /**
+     * @dev Checks if a matriculation number is valid based on a list of valid ranges.
+     * @param _matriculationNumber The matriculation number to check.
+     * @param _validRanges The array of valid matriculation number ranges.
+     * @return isValid True if the matriculation number is valid, false otherwise.
+     */
+    function isValidMatriculationNumber(string memory _matriculationNumber, string[6] memory _validRanges) private pure returns (bool isValid) {
+        for (uint i = 0; i < _validRanges.length; i++) {
+            if (startsWith(_matriculationNumber, _validRanges[i])) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @dev Ends the election and retrieves the winner(s) of the election.
+     * @return winners The array of candidate IDs who received the highest votes.
+     */
+    function endElection() public onlyAdmin returns (uint[] memory winners) {
         require(isElectionOpen, "Election is not open");
+        require(block.timestamp > electionEndTime, "Election is still ongoing");
+
+        uint maxVotes = 0;
+        uint winnerCount = 0;
+
+        // Find the maximum number of votes
+        for (uint i = 1; i <= candidateCount; i++) {
+            if (candidates[i].voteCount > maxVotes) {
+                maxVotes = candidates[i].voteCount;
+                winnerCount = 1;
+            } else if (candidates[i].voteCount == maxVotes) {
+                winnerCount++;
+            }
+        }
+
+        // Store the IDs of the winners
+        uint[] memory winnersArray = new uint[](winnerCount);
+        uint index = 0;
+        for (uint i = 1; i <= candidateCount; i++) {
+            if (candidates[i].voteCount == maxVotes) {
+                winnersArray[index] = i;
+                index++;
+            }
+        }
 
         isElectionOpen = false;
+        return winnersArray;
     }
 
     /**
-     * @dev Updates the end time of the election.
-     * @param _newEndTime The new end time of the election.
+     * @dev Gets the remaining time (in seconds) until the end of the election.
+     * @return remainingTime The remaining time in seconds.
      */
-    function updateElectionEndTime(uint _newEndTime) public onlyAdmin {
-        require(_newEndTime > block.timestamp, "Invalid end time");
-        require(_newEndTime > electionEndTime, "New end time must be later than current end time");
-
-        electionEndTime = _newEndTime;
-    }
-
-    /**
-     * @dev Sets the vote count for multiple candidates at once.
-     * @param _candidateIds The IDs of the candidates.
-     * @param _voteCounts The corresponding vote counts for the candidates.
-     */
-    function setVoteCountForCandidates(uint[] memory _candidateIds, uint[] memory _voteCounts) public onlyAdmin {
-        require(_candidateIds.length == _voteCounts.length, "Invalid input lengths");
-
-        for (uint i = 0; i < _candidateIds.length; i++) {
-            uint candidateId = _candidateIds[i];
-            require(candidateId > 0 && candidateId <= candidateCount, "Invalid candidate ID");
-
-            candidates[candidateId].voteCount = _voteCounts[i];
+    function getRemainingTime() public view returns (uint remainingTime) {
+        if (block.timestamp > electionEndTime) {
+            return 0;
+        } else {
+            return electionEndTime - block.timestamp;
         }
     }
 
     /**
-     * @dev Checks if a matriculation number is valid.
-     * @param _department The department associated with the matriculation number.
-     * @param _matriculationNumber The matriculation number to validate.
-     * @return True if the matriculation number is valid, false otherwise.
+     * @dev Checks if the voting period has ended.
+     * @return hasEnded True if the voting period has ended, false otherwise.
      */
-    function isValidMatriculationNumber(string memory _department, string memory _matriculationNumber) private pure returns (bool) {
-        bytes memory departmentBytes = bytes(_department);
-        bytes memory matriculationBytes = bytes(_matriculationNumber);
+    function hasVotingEnded() public view returns (bool hasEnded) {
+        return !isElectionOpen || block.timestamp > electionEndTime;
+    }
 
-        if (departmentBytes.length < 2 || matriculationBytes.length != 10) {
+    /**
+     * @dev Checks if a voter has already voted.
+     * @param _voterAddress The address of the voter.
+     * @return Voted True if the voter has voted, false otherwise.
+     */
+    function hasVoted(address _voterAddress) public view returns (bool Voted) {
+        return voters[_voterAddress].hasVoted;
+    }
+
+    /**
+     * @dev Compares two strings and checks if they are equal.
+     * @param a The first string.
+     * @param b The second string.
+     * @return isEqual True if the strings are equal, false otherwise.
+     */
+    function compareStrings(string memory a, string memory b) private pure returns (bool isEqual) {
+        return (keccak256(abi.encodePacked((a))) == keccak256(abi.encodePacked((b))));
+    }
+
+    /**
+     * @dev Checks if a string starts with a specific prefix.
+     * @param str The string to check.
+     * @param prefix The prefix to check.
+     * @return starts True if the string starts with the prefix, false otherwise.
+     */
+    function startsWith(string memory str, string memory prefix) private pure returns (bool starts) {
+        bytes memory strBytes = bytes(str);
+        bytes memory prefixBytes = bytes(prefix);
+
+        if (strBytes.length < prefixBytes.length) {
             return false;
         }
 
-        bytes2 departmentPrefix = bytes2(uint16(uint8(departmentBytes[0])) << 8 | uint16(uint8(departmentBytes[1])));
-        bytes2 allowedDepartmentPrefix1 = bytes2(0x414E); // "AN" - Anatomy
-        bytes2 allowedDepartmentPrefix2 = bytes2(0x4243); // "BC" - Biochemistry
-        bytes2 allowedDepartmentPrefix3 = bytes2(0x5059); // "PY" - Physiology
-        bytes2 allowedDepartmentPrefix4 = bytes2(0x4855); // "HU" - Human nutrition and dietetics
-        bytes2 allowedDepartmentPrefix5 = bytes2(0x5048); // "PH" - Pharmacology
-        bytes2 allowedDepartmentPrefix6 = bytes2(0x5343); // "SC" - Science
-
-        if (
-            departmentPrefix != allowedDepartmentPrefix1 &&
-            departmentPrefix != allowedDepartmentPrefix2 &&
-            departmentPrefix != allowedDepartmentPrefix3 &&
-            departmentPrefix != allowedDepartmentPrefix4 &&
-            departmentPrefix != allowedDepartmentPrefix5 &&
-            departmentPrefix != allowedDepartmentPrefix6
-        ) {
-            return false;
-        }
-
-        uint academicYear = uint(uint8(departmentBytes[2])) * 10 + uint(uint8(departmentBytes[3]));
-        uint groupCode = uint(uint8(departmentBytes[4]));
-
-        if (academicYear < 18 || academicYear > 23) {
-            return false;
-        }
-
-        if (groupCode < 41 || (groupCode > 45 && groupCode != 65 && groupCode != 66 && groupCode != 67)) {
-            return false;
-        }
-
-        uint remainingNumbers = uint(uint8(matriculationBytes[5])) * 10000 +
-            uint(uint8(matriculationBytes[6])) * 1000 +
-            uint(uint8(matriculationBytes[7])) * 100 +
-            uint(uint8(matriculationBytes[8])) * 10 +
-            uint(uint8(matriculationBytes[9]));
-
-        if (remainingNumbers < 44001 || remainingNumbers > 44300) {
-            return false;
+        for (uint i = 0; i < prefixBytes.length; i++) {
+            if (strBytes[i] != prefixBytes[i]) {
+                return false;
+            }
         }
 
         return true;
